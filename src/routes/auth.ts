@@ -104,16 +104,28 @@ export async function authRoutes(app: FastifyInstance) {
       return err(reply, 400, 'Invalid or expired code. Request a new one.')
     }
 
-    // Get profile for role and scopes
-    const { data: profile } = await db
+    // Get profile — create it if trigger didn't fire
+    let { data: profile } = await db
       .from('profiles')
       .select('role, is_active, full_name')
       .eq('id', data.user!.id)
-      .single()
+      .maybeSingle()
 
-    if (!profile || !profile.is_active) {
-      return err(reply, 403, 'Account inactive. Contact support.')
+    if (!profile) {
+      // Profile missing — create it now
+      const { data: newProfile } = await db.from('profiles').insert({
+        id:        data.user!.id,
+        email:     data.user!.email ?? '',
+        full_name: data.user!.user_metadata?.['full_name'] ?? null,
+        role:      data.user!.user_metadata?.['role'] ?? 'user',
+        is_active: true,
+      }).select('role, is_active, full_name').single()
+
+      profile = newProfile
     }
+
+    if (!profile) return err(reply, 500, 'Failed to load profile. Please try again.')
+    if (!profile.is_active) return err(reply, 403, 'Account suspended. Contact support.')
 
     const role   = (profile.role ?? 'user') as Role
     const scopes = getScopesForRole(role)
@@ -194,14 +206,25 @@ export async function authRoutes(app: FastifyInstance) {
       return err(reply, 401, 'Login failed. Please try again.')
     }
 
-    // Get profile for role and scopes
-    const { data: profile } = await db
+    // Get profile — create if trigger didn't fire
+    let { data: profile } = await db
       .from('profiles')
       .select('role, is_active, full_name, avatar_url')
       .eq('id', data.user.id)
-      .single()
+      .maybeSingle()
 
-    if (!profile) return err(reply, 404, 'Profile not found. Contact support.')
+    if (!profile) {
+      const { data: newProfile } = await db.from('profiles').insert({
+        id:        data.user.id,
+        email:     data.user.email ?? '',
+        full_name: data.user.user_metadata?.['full_name'] ?? null,
+        role:      data.user.user_metadata?.['role'] ?? 'user',
+        is_active: true,
+      }).select('role, is_active, full_name, avatar_url').single()
+      profile = newProfile
+    }
+
+    if (!profile) return err(reply, 500, 'Failed to load profile. Please try again.')
     if (!profile.is_active) return err(reply, 403, 'Account suspended. Contact support.')
 
     const role   = (profile.role ?? 'user') as Role
