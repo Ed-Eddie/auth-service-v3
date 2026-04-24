@@ -44,10 +44,7 @@ await app.register(rateLimit, {
   }),
 })
 
-await app.register(authRoutes)
-await app.register(adminRoutes)
-await app.register(userRoutes)
-
+// Error and not-found handlers must be registered before routes in Fastify v5
 app.setErrorHandler((error: FastifyError, req, reply) => {
   app.log.error({ err: error, url: req.url }, 'Unhandled error')
   if (error.validation) return reply.status(400).send({ error: 'Invalid request data' })
@@ -57,6 +54,15 @@ app.setErrorHandler((error: FastifyError, req, reply) => {
 
 app.setNotFoundHandler((_req, reply) => {
   reply.status(404).send({ error: 'Not found' })
+})
+
+await app.register(authRoutes)
+await app.register(adminRoutes)
+await app.register(userRoutes)
+
+// Debug — list all registered routes on startup
+app.ready(() => {
+  console.log('[routes]', app.printRoutes())
 })
 
 const shutdown = async (signal: string) => {
